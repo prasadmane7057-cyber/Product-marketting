@@ -1,0 +1,306 @@
+// Prisma Schema for NovaMarket E-Commerce Platform (PostgreSQL Production)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         String    @default("CUSTOMER") // "ADMIN" or "CUSTOMER"
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  addresses    Address[]
+  orders       Order[]
+  reviews      Review[]
+  cart         Cart?
+  wishlist     WishlistItem[]
+}
+
+model Address {
+  id           String    @id @default(uuid())
+  userId       String
+  fullName     String
+  phone        String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  postalCode   String
+  country      String    @default("India")
+  isDefault    Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Category {
+  id          String    @id @default(uuid())
+  name        String
+  slug        String    @unique
+  description String?
+  image       String?
+  parentId    String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  products    Product[]
+}
+
+model Product {
+  id                 String           @id @default(uuid())
+  name               String
+  slug               String           @unique
+  sku                String           @unique
+  shortDesc          String
+  description        String
+  brand              String
+  regularPrice       Float
+  sellingPrice       Float
+  discountPercent    Float            @default(0)
+  isFeatured         Boolean          @default(false)
+  isBestSeller       Boolean          @default(false)
+  isTrending         Boolean          @default(false)
+  status             String           @default("PUBLISHED") // "DRAFT", "PUBLISHED", "ARCHIVED"
+  weight             String?          // e.g. "450g"
+  dimensions         String?          // e.g. "15 x 8 x 2 cm"
+  specifications     String?          // JSON string of specs key-values
+  shippingInfo       String?
+  returnWarrantyInfo String?
+  tags               String?          // Comma-separated or JSON string
+  seoTitle           String?
+  seoDescription     String?
+  stockQuantity      Int              @default(50)
+  categoryId         String
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  category           Category         @relation(fields: [categoryId], references: [id])
+  images             ProductImage[]
+  variants           ProductVariant[]
+  reviews            Review[]
+  orderItems         OrderItem[]
+  cartItems          CartItem[]
+  wishlistItems      WishlistItem[]
+  inventoryLogs      InventoryLog[]
+}
+
+model ProductImage {
+  id        String   @id @default(uuid())
+  productId String
+  url       String
+  altText   String?
+  isPrimary Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model ProductVariant {
+  id            String         @id @default(uuid())
+  productId     String
+  name          String         // e.g. "Matte Black / 128GB"
+  sku           String         @unique
+  price         Float
+  stockQuantity Int            @default(0)
+  attributes    String?        // JSON string e.g. {"color":"Black","storage":"128GB"}
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  product       Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  cartItems     CartItem[]
+  orderItems    OrderItem[]
+  inventoryLogs InventoryLog[]
+}
+
+model InventoryLog {
+  id            String          @id @default(uuid())
+  productId     String
+  variantId     String?
+  changeAmount  Int             // positive for restock, negative for sale
+  previousStock Int
+  newStock      Int
+  reason        String          // e.g. "ORDER_SALE", "MANUAL_RESTOCK", "RETURN"
+  referenceId   String?         // Order ID or admin note
+  createdAt     DateTime        @default(now())
+
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant       ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+}
+
+model Cart {
+  id        String     @id @default(uuid())
+  userId    String?    @unique
+  sessionId String?    @unique
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+}
+
+model CartItem {
+  id        String          @id @default(uuid())
+  cartId    String
+  productId String
+  variantId String?
+  quantity  Int             @default(1)
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+
+  cart      Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+}
+
+model WishlistItem {
+  id        String   @id @default(uuid())
+  userId    String
+  productId String
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, productId])
+}
+
+model Order {
+  id              String      @id @default(uuid())
+  orderNumber     String      @unique // e.g. "ORD-20261022-XXXX"
+  userId          String?
+  customerName    String
+  customerEmail   String
+  customerPhone   String
+  shippingAddress String      // JSON string of address snapshot
+  billingAddress  String?     // JSON string of address snapshot
+  subtotal        Float
+  discountTotal   Float       @default(0)
+  shippingTotal   Float       @default(0)
+  taxTotal        Float       @default(0)
+  grandTotal      Float
+  couponCode      String?
+  status          String      @default("PENDING") // PENDING, PROCESSING, SHIPPED, DELIVERED, CANCELLED, REFUNDED
+  paymentStatus   String      @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+  paymentMethod   String      @default("COD")     // COD, RAZORPAY, TEST_CARD
+  paymentId       String?
+  trackingNumber  String?
+  trackingCarrier String?
+  trackingUrl     String?
+  customerNotes   String?
+  adminNotes      String?
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  user            User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  items           OrderItem[]
+  payments        Payment[]
+}
+
+model OrderItem {
+  id          String          @id @default(uuid())
+  orderId     String
+  productId   String
+  variantId   String?
+  productName String
+  productSku  String
+  variantName String?
+  unitPrice   Float
+  quantity    Int
+  subtotal    Float
+  createdAt   DateTime        @default(now())
+
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product     Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  variant     ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  orderId       String
+  paymentMethod String
+  transactionId String?
+  amount        Float
+  currency      String   @default("INR")
+  status        String   @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED
+  rawResponse   String?  // JSON string of gateway response / webhook payload
+  createdAt     DateTime @default(now())
+
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Coupon {
+  id                String    @id @default(uuid())
+  code              String    @unique
+  description       String
+  discountType      String    // "PERCENTAGE" or "FIXED"
+  discountValue     Float
+  minOrderAmount    Float     @default(0)
+  maxDiscountAmount Float?
+  startDate         DateTime  @default(now())
+  endDate           DateTime
+  usageLimit        Int       @default(100)
+  usageCount        Int       @default(0)
+  isActive          Boolean   @default(true)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+model Review {
+  id                 String   @id @default(uuid())
+  productId          String
+  userId             String?
+  userName           String
+  rating             Int      @default(5)
+  title              String
+  comment            String
+  isVerifiedPurchase Boolean  @default(true)
+  status             String   @default("APPROVED") // "APPROVED", "PENDING", "REJECTED"
+  createdAt          DateTime @default(now())
+
+  product            Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user               User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}
+
+model NewsletterSubscription {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  consentGiven Boolean  @default(true)
+  isActive     Boolean  @default(true)
+  subscribedAt DateTime @default(now())
+}
+
+model ContactEnquiry {
+  id        String   @id @default(uuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String
+  message   String
+  status    String   @default("NEW") // "NEW", "IN_PROGRESS", "RESOLVED"
+  createdAt DateTime @default(now())
+}
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  eventType String   // "PAGE_VIEW", "VIEW_PRODUCT", "ADD_TO_CART", "INITIATE_CHECKOUT", "PURCHASE"
+  userId    String?
+  sessionId String?
+  entityId  String?  // e.g. productId, orderId, or categoryId
+  metadata  String?  // JSON string of event payload
+  createdAt DateTime @default(now())
+}
